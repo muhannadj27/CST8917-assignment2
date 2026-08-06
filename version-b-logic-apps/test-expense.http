@@ -1,0 +1,151 @@
+### CST8917 Assignment 2 — Version B: Logic Apps + Service Bus
+### Expense Approval Workflow — test scenarios
+### Use with the VS Code "REST Client" extension.
+###
+### Flow under test:
+###   POST /api/expenses (Azure Function)
+###     -> enqueues onto Service Bus queue "expense-requests"
+###     -> Logic App trigger picks it up
+###     -> Validate_Expense action calls /api/validate
+###     -> auto-approve, or Wait_For_Manager_Decision webhook (see below)
+###     -> outcome published to topic "expense-outcomes" with filtered
+###        subscriptions (approved-sub / rejected-sub / escalated-sub /
+###        validation-error-sub) and an email is sent.
+###
+### Replace {functionAppUrl} with your deployed Function App base URL
+### (or http://localhost:7071 for local testing with `func start`),
+### and include the function key if running with AuthLevel.FUNCTION
+### against a deployed app (?code=...).
+
+@baseUrl = http://localhost:7071/api
+
+### ============================================================
+### Scenario 1: Valid expense under $100 -> Auto-approved
+### ============================================================
+POST {{baseUrl}}/expenses
+Content-Type: application/json
+
+{
+  "employeeName": "Alice Chen",
+  "employeeEmail": "alice.chen@example.com",
+  "amount": 45.50,
+  "category": "supplies",
+  "description": "Notebooks and pens for the team",
+  "managerEmail": "manager1@example.com"
+}
+
+### Verify: Logic App run history shows Condition_Amount_Under_100 = true
+### branch; a message with application property outcome=approved lands in
+### 'approved-sub'; employee receives an "approved" email.
+
+
+### ============================================================
+### Scenario 2: Valid expense >= $100, manager approves -> Approved
+### ============================================================
+POST {{baseUrl}}/expenses
+Content-Type: application/json
+
+{
+  "employeeName": "Bilal Karim",
+  "employeeEmail": "bilal.karim@example.com",
+  "amount": 350.00,
+  "category": "travel",
+  "description": "Flight to client site",
+  "managerEmail": "manager1@example.com"
+}
+
+### While the Logic App run is paused on Wait_For_Manager_Decision, open
+### the run in the portal (or check Application Insights / the Function
+### log for notify-manager) and copy the `callbackUrl` value that was sent
+### to /api/notify-manager. Paste it below, then send this request BEFORE
+### the managerTimeout (default PT5M) elapses.
+POST PASTE_CALLBACK_URL_HERE
+Content-Type: application/json
+
+{
+  "decision": "approved"
+}
+
+
+### ============================================================
+### Scenario 3: Valid expense >= $100, manager rejects -> Rejected
+### ============================================================
+POST {{baseUrl}}/expenses
+Content-Type: application/json
+
+{
+  "employeeName": "Carla Diaz",
+  "employeeEmail": "carla.diaz@example.com",
+  "amount": 899.99,
+  "category": "equipment",
+  "description": "New monitor",
+  "managerEmail": "manager1@example.com"
+}
+
+### Copy the callbackUrl from the run's Wait_For_Manager_Decision action
+POST PASTE_CALLBACK_URL_HERE
+Content-Type: application/json
+
+{
+  "decision": "rejected"
+}
+
+
+### ============================================================
+### Scenario 4: Valid expense >= $100, no manager response -> Escalated
+### Do NOT call the callback URL for this instance.
+### Wait for managerTimeout (default 5 min); Wait_For_Manager_Decision
+### times out, Compose_Escalated_Outcome/Publish_Escalated_To_Topic run.
+### ============================================================
+POST {{baseUrl}}/expenses
+Content-Type: application/json
+
+{
+  "employeeName": "Deepa Nair",
+  "employeeEmail": "deepa.nair@example.com",
+  "amount": 500.00,
+  "category": "software",
+  "description": "Annual IDE license",
+  "managerEmail": "manager1@example.com"
+}
+
+### Verify: message with outcome=escalated lands in 'escalated-sub';
+### employee receives an "auto-approved (escalated)" email.
+
+
+### ============================================================
+### Scenario 5: Missing required fields -> Validation error
+### ============================================================
+POST {{baseUrl}}/expenses
+Content-Type: application/json
+
+{
+  "employeeName": "Evan Wright",
+  "amount": 75,
+  "category": "meals",
+  "description": "Team lunch"
+}
+
+### Missing employeeEmail and managerEmail.
+### Verify: Validate_Expense returns valid=false; Condition_Is_Valid takes
+### the "else" branch; message with outcome=validation_error lands in
+### 'validation-error-sub'.
+
+
+### ============================================================
+### Scenario 6: Invalid category -> Validation error
+### ============================================================
+POST {{baseUrl}}/expenses
+Content-Type: application/json
+
+{
+  "employeeName": "Fiona Lee",
+  "employeeEmail": "fiona.lee@example.com",
+  "amount": 120,
+  "category": "entertainment",
+  "description": "Client dinner",
+  "managerEmail": "manager1@example.com"
+}
+
+### "entertainment" is not in the valid category list.
+### Verify: same validation_error path as Scenario 5.

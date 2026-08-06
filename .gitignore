@@ -1,0 +1,17 @@
+# Azure Functions local dev
+local.settings.json
+bin/
+obj/
+__pycache__/
+*.pyc
+.python_packages/
+.venv/
+venv/
+
+# Logic Apps generated connections (contains secrets)
+version-b-logic-apps/logicapp/connections.json
+
+# OS / editor
+.DS_Store
+.vscode/
+*.swp

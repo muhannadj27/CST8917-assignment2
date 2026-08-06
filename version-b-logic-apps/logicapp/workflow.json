@@ -1,0 +1,357 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "$connections": {
+      "defaultValue": {},
+      "type": "Object"
+    },
+    "validateFunctionUrl": {
+      "type": "String",
+      "defaultValue": "https://<validation-function-app>.azurewebsites.net/api/validate"
+    },
+    "notifyManagerFunctionUrl": {
+      "type": "String",
+      "defaultValue": "https://<validation-function-app>.azurewebsites.net/api/notify-manager"
+    },
+    "outcomeTopicName": {
+      "type": "String",
+      "defaultValue": "expense-outcomes"
+    },
+    "managerTimeout": {
+      "type": "String",
+      "defaultValue": "PT5M",
+      "metadata": {
+        "description": "ISO 8601 duration. Short for demo/testing; use PT48H or similar in production."
+      }
+    }
+  },
+  "triggers": {
+    "When_a_message_is_received_in_a_queue": {
+      "type": "ApiConnection",
+      "recurrence": {
+        "frequency": "Second",
+        "interval": 10
+      },
+      "inputs": {
+        "host": {
+          "connection": {
+            "referenceName": "servicebus"
+          }
+        },
+        "method": "get",
+        "path": "/@{encodeURIComponent('expense-requests')}/messages/head",
+        "queries": {
+          "queueType": "Main"
+        }
+      }
+    }
+  },
+  "actions": {
+    "Parse_Expense_JSON": {
+      "type": "ParseJson",
+      "inputs": {
+        "content": "@base64ToString(triggerBody()?['ContentData'])",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "employeeName": { "type": "string" },
+            "employeeEmail": { "type": "string" },
+            "amount": { "type": "number" },
+            "category": { "type": "string" },
+            "description": { "type": "string" },
+            "managerEmail": { "type": "string" }
+          }
+        }
+      },
+      "runAfter": {}
+    },
+
+    "Validate_Expense": {
+      "type": "Http",
+      "inputs": {
+        "method": "POST",
+        "uri": "@parameters('validateFunctionUrl')",
+        "body": "@body('Parse_Expense_JSON')"
+      },
+      "runAfter": {
+        "Parse_Expense_JSON": ["Succeeded"]
+      }
+    },
+
+    "Parse_Validation_Result": {
+      "type": "ParseJson",
+      "inputs": {
+        "content": "@body('Validate_Expense')",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "valid": { "type": "boolean" },
+            "errors": { "type": "array" }
+          }
+        }
+      },
+      "runAfter": {
+        "Validate_Expense": ["Succeeded"]
+      }
+    },
+
+    "Condition_Is_Valid": {
+      "type": "If",
+      "expression": {
+        "and": [
+          { "equals": ["@body('Parse_Validation_Result')?['valid']", true] }
+        ]
+      },
+      "runAfter": {
+        "Parse_Validation_Result": ["Succeeded"]
+      },
+      "actions": {
+        "Condition_Amount_Under_100": {
+          "type": "If",
+          "expression": {
+            "and": [
+              { "less": ["@body('Parse_Expense_JSON')?['amount']", 100] }
+            ]
+          },
+          "actions": {
+            "Compose_AutoApproved_Outcome": {
+              "type": "Compose",
+              "inputs": {
+                "status": "approved",
+                "reason": "auto-approved: amount under $100",
+                "escalated": false,
+                "expense": "@body('Parse_Expense_JSON')"
+              }
+            },
+            "Publish_Approved_To_Topic": {
+              "type": "ApiConnection",
+              "runAfter": { "Compose_AutoApproved_Outcome": ["Succeeded"] },
+              "inputs": {
+                "host": { "connection": { "referenceName": "servicebus" } },
+                "method": "post",
+                "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
+                "body": {
+                  "ContentData": "@base64(string(outputs('Compose_AutoApproved_Outcome')))",
+                  "ContentType": "application/json",
+                  "Properties": { "outcome": "approved" }
+                }
+              }
+            },
+            "Send_Approved_Email": {
+              "type": "ApiConnection",
+              "runAfter": { "Publish_Approved_To_Topic": ["Succeeded"] },
+              "inputs": {
+                "host": {
+                  "connection": { "referenceName": "office365" }
+                },
+                "method": "post",
+                "path": "/v2/Mail",
+                "body": {
+                  "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                  "Subject": "Your expense was approved",
+                  "Body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your expense of $@{body('Parse_Expense_JSON')?['amount']} was auto-approved (under $100)."
+                }
+              }
+            }
+          },
+          "else": {
+            "actions": {
+              "Wait_For_Manager_Decision": {
+                "type": "HttpWebhook",
+                "inputs": {
+                  "subscribe": {
+                    "method": "POST",
+                    "uri": "@parameters('notifyManagerFunctionUrl')",
+                    "body": {
+                      "callbackUrl": "@{listCallbackUrl()}",
+                      "expense": "@body('Parse_Expense_JSON')"
+                    }
+                  },
+                  "unsubscribe": {}
+                },
+                "limit": {
+                  "timeout": "@parameters('managerTimeout')"
+                }
+              },
+
+              "Condition_Manager_Responded": {
+                "type": "If",
+                "runAfter": {
+                  "Wait_For_Manager_Decision": ["Succeeded"]
+                },
+                "expression": {
+                  "and": [
+                    { "equals": ["@body('Wait_For_Manager_Decision')?['decision']", "approved"] }
+                  ]
+                },
+                "actions": {
+                  "Compose_ManagerApproved_Outcome": {
+                    "type": "Compose",
+                    "inputs": {
+                      "status": "approved",
+                      "reason": "approved by manager",
+                      "escalated": false,
+                      "expense": "@body('Parse_Expense_JSON')"
+                    }
+                  },
+                  "Publish_ManagerApproved_To_Topic": {
+                    "type": "ApiConnection",
+                    "runAfter": { "Compose_ManagerApproved_Outcome": ["Succeeded"] },
+                    "inputs": {
+                      "host": { "connection": { "referenceName": "servicebus" } },
+                      "method": "post",
+                      "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
+                      "body": {
+                        "ContentData": "@base64(string(outputs('Compose_ManagerApproved_Outcome')))",
+                        "ContentType": "application/json",
+                        "Properties": { "outcome": "approved" }
+                      }
+                    }
+                  },
+                  "Send_ManagerApproved_Email": {
+                    "type": "ApiConnection",
+                    "runAfter": { "Publish_ManagerApproved_To_Topic": ["Succeeded"] },
+                    "inputs": {
+                      "host": { "connection": { "referenceName": "office365" } },
+                      "method": "post",
+                      "path": "/v2/Mail",
+                      "body": {
+                        "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                        "Subject": "Your expense was approved",
+                        "Body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager approved your $@{body('Parse_Expense_JSON')?['amount']} expense."
+                      }
+                    }
+                  }
+                },
+                "else": {
+                  "actions": {
+                    "Compose_Rejected_Outcome": {
+                      "type": "Compose",
+                      "inputs": {
+                        "status": "rejected",
+                        "reason": "rejected by manager",
+                        "escalated": false,
+                        "expense": "@body('Parse_Expense_JSON')"
+                      }
+                    },
+                    "Publish_Rejected_To_Topic": {
+                      "type": "ApiConnection",
+                      "runAfter": { "Compose_Rejected_Outcome": ["Succeeded"] },
+                      "inputs": {
+                        "host": { "connection": { "referenceName": "servicebus" } },
+                        "method": "post",
+                        "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
+                        "body": {
+                          "ContentData": "@base64(string(outputs('Compose_Rejected_Outcome')))",
+                          "ContentType": "application/json",
+                          "Properties": { "outcome": "rejected" }
+                        }
+                      }
+                    },
+                    "Send_Rejected_Email": {
+                      "type": "ApiConnection",
+                      "runAfter": { "Publish_Rejected_To_Topic": ["Succeeded"] },
+                      "inputs": {
+                        "host": { "connection": { "referenceName": "office365" } },
+                        "method": "post",
+                        "path": "/v2/Mail",
+                        "body": {
+                          "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                          "Subject": "Your expense was rejected",
+                          "Body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager rejected your $@{body('Parse_Expense_JSON')?['amount']} expense."
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+
+              "Compose_Escalated_Outcome": {
+                "type": "Compose",
+                "runAfter": {
+                  "Wait_For_Manager_Decision": ["TimedOut"]
+                },
+                "inputs": {
+                  "status": "approved",
+                  "reason": "auto-approved after timeout: no manager response",
+                  "escalated": true,
+                  "expense": "@body('Parse_Expense_JSON')"
+                }
+              },
+              "Publish_Escalated_To_Topic": {
+                "type": "ApiConnection",
+                "runAfter": { "Compose_Escalated_Outcome": ["Succeeded"] },
+                "inputs": {
+                  "host": { "connection": { "referenceName": "servicebus" } },
+                  "method": "post",
+                  "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
+                  "body": {
+                    "ContentData": "@base64(string(outputs('Compose_Escalated_Outcome')))",
+                    "ContentType": "application/json",
+                    "Properties": { "outcome": "escalated" }
+                  }
+                }
+              },
+              "Send_Escalated_Email": {
+                "type": "ApiConnection",
+                "runAfter": { "Publish_Escalated_To_Topic": ["Succeeded"] },
+                "inputs": {
+                  "host": { "connection": { "referenceName": "office365" } },
+                  "method": "post",
+                  "path": "/v2/Mail",
+                  "body": {
+                    "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                    "Subject": "Your expense was auto-approved (escalated)",
+                    "Body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager did not respond in time, so your $@{body('Parse_Expense_JSON')?['amount']} expense was auto-approved and flagged for review."
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "actions": {
+          "Compose_ValidationError_Outcome": {
+            "type": "Compose",
+            "inputs": {
+              "status": "validation_error",
+              "errors": "@body('Parse_Validation_Result')?['errors']",
+              "expense": "@body('Parse_Expense_JSON')"
+            }
+          },
+          "Publish_ValidationError_To_Topic": {
+            "type": "ApiConnection",
+            "runAfter": { "Compose_ValidationError_Outcome": ["Succeeded"] },
+            "inputs": {
+              "host": { "connection": { "referenceName": "servicebus" } },
+              "method": "post",
+              "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
+              "body": {
+                "ContentData": "@base64(string(outputs('Compose_ValidationError_Outcome')))",
+                "ContentType": "application/json",
+                "Properties": { "outcome": "validation_error" }
+              }
+            }
+          },
+          "Send_ValidationError_Email": {
+            "type": "ApiConnection",
+            "runAfter": { "Publish_ValidationError_To_Topic": ["Succeeded"] },
+            "inputs": {
+              "host": { "connection": { "referenceName": "office365" } },
+              "method": "post",
+              "path": "/v2/Mail",
+              "body": {
+                "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                "Subject": "Your expense submission had errors",
+                "Body": "Please correct the following and resubmit: @{join(body('Parse_Validation_Result')?['errors'], ', ')}"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "outputs": {}
+}
