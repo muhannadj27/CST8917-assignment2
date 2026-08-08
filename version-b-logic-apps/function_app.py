@@ -32,12 +32,25 @@ logic and for accepting the initial HTTP submission:
                         assignment/demo it logs the callback URL so it can
                         be copied into `test-expense.http` to simulate the
                         manager clicking Approve/Reject.
+
+  4. `send_email`       (HTTP POST /api/send-email)
+                        Called BY the Logic App in place of the Office 365
+                        Outlook connector. Office 365's connector needs an
+                        interactive OAuth sign-in per environment, which
+                        can't be scripted; Azure Communication Services
+                        Email uses a connection string instead, so routing
+                        every outbound email through this one plain HTTP
+                        action keeps the whole Logic App deployable from
+                        the CLI with no manual portal step. Body:
+                        {"to": "...", "subject": "...", "body": "..."}.
 """
 
 import json
 import logging
+import os
 
 import azure.functions as func
+from azure.communication.email import EmailClient
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
@@ -144,3 +157,56 @@ def notify_manager_webhook(req: func.HttpRequest) -> func.HttpResponse:
     # as a separate POST to `callback_url`, which resumes the paused
     # Logic App run.
     return func.HttpResponse(status_code=200)
+
+
+@app.route(route="send-email", methods=["POST"])
+def send_email(req: func.HttpRequest) -> func.HttpResponse:
+    """Called by the Logic App's Send_..._Email HTTP actions."""
+    try:
+        payload = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Request body must be valid JSON"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    to = payload.get("to")
+    subject = payload.get("subject")
+    body = payload.get("body")
+    if not subject or not body:
+        return func.HttpResponse(
+            json.dumps({"error": "subject and body are required"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    connection_string = os.environ.get("COMMUNICATION_SERVICES_CONNECTION_STRING")
+    sender = os.environ.get("SENDER_EMAIL")
+
+    if not to or not connection_string or not sender:
+        # No usable recipient (e.g. the validation-error path where
+        # employeeEmail was itself the missing field) or ACS not configured:
+        # log instead of sending, rather than failing the Logic App run.
+        logging.info(f"[EMAIL to {to}] Subject: {subject}\n{body}")
+        return func.HttpResponse(
+            json.dumps({"sent": False, "reason": "no recipient or ACS not configured"}),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    client = EmailClient.from_connection_string(connection_string)
+    message = {
+        "senderAddress": sender,
+        "recipients": {"to": [{"address": to}]},
+        "content": {"subject": subject, "plainText": body},
+    }
+    poller = client.begin_send(message)
+    result = poller.result()
+    logging.info(f"Email to {to} -> status {result['status']}")
+
+    return func.HttpResponse(
+        json.dumps({"sent": result["status"] == "Succeeded", "id": result.get("id")}),
+        status_code=200,
+        mimetype="application/json",
+    )

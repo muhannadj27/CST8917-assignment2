@@ -1,0 +1,65 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "logicAppName": { "type": "string" },
+    "location": { "type": "string" },
+    "serviceBusConnectionString": { "type": "securestring" },
+    "workflowDefinition": {
+      "type": "object",
+      "metadata": {
+        "description": "The full Logic Apps Workflow Definition Language document (contents of workflow.json), with its parameter defaultValues already resolved to real Function App URLs + keys."
+      }
+    }
+  },
+  "variables": {
+    "connectionName": "servicebus"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/connections",
+      "apiVersion": "2016-06-01",
+      "name": "[variables('connectionName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "servicebus",
+        "api": {
+          "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/servicebus')]"
+        },
+        "parameterValues": {
+          "connectionString": "[parameters('serviceBusConnectionString')]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Logic/workflows",
+      "apiVersion": "2019-05-01",
+      "name": "[parameters('logicAppName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/connections', variables('connectionName'))]"
+      ],
+      "properties": {
+        "state": "Enabled",
+        "definition": "[parameters('workflowDefinition')]",
+        "parameters": {
+          "$connections": {
+            "value": {
+              "servicebus": {
+                "connectionId": "[resourceId('Microsoft.Web/connections', variables('connectionName'))]",
+                "connectionName": "servicebus",
+                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Web/locations/', parameters('location'), '/managedApis/servicebus')]"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "logicAppCallbackHost": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Logic/workflows', parameters('logicAppName'))).accessEndpoint]"
+    }
+  }
+}

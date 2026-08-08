@@ -14,6 +14,10 @@
       "type": "String",
       "defaultValue": "https://<validation-function-app>.azurewebsites.net/api/notify-manager"
     },
+    "sendEmailFunctionUrl": {
+      "type": "String",
+      "defaultValue": "https://<validation-function-app>.azurewebsites.net/api/send-email"
+    },
     "outcomeTopicName": {
       "type": "String",
       "defaultValue": "expense-outcomes"
@@ -36,7 +40,7 @@
       "inputs": {
         "host": {
           "connection": {
-            "referenceName": "servicebus"
+            "name": "@parameters('$connections')['servicebus']['connectionId']"
           }
         },
         "method": "get",
@@ -128,7 +132,7 @@
               "type": "ApiConnection",
               "runAfter": { "Compose_AutoApproved_Outcome": ["Succeeded"] },
               "inputs": {
-                "host": { "connection": { "referenceName": "servicebus" } },
+                "host": { "connection": { "name": "@parameters('$connections')['servicebus']['connectionId']" } },
                 "method": "post",
                 "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
                 "body": {
@@ -139,18 +143,15 @@
               }
             },
             "Send_Approved_Email": {
-              "type": "ApiConnection",
+              "type": "Http",
               "runAfter": { "Publish_Approved_To_Topic": ["Succeeded"] },
               "inputs": {
-                "host": {
-                  "connection": { "referenceName": "office365" }
-                },
-                "method": "post",
-                "path": "/v2/Mail",
+                "method": "POST",
+                "uri": "@parameters('sendEmailFunctionUrl')",
                 "body": {
-                  "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
-                  "Subject": "Your expense was approved",
-                  "Body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your expense of $@{body('Parse_Expense_JSON')?['amount']} was auto-approved (under $100)."
+                  "to": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                  "subject": "Your expense was approved",
+                  "body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your expense of $@{body('Parse_Expense_JSON')?['amount']} was auto-approved (under $100)."
                 }
               }
             }
@@ -199,7 +200,7 @@
                     "type": "ApiConnection",
                     "runAfter": { "Compose_ManagerApproved_Outcome": ["Succeeded"] },
                     "inputs": {
-                      "host": { "connection": { "referenceName": "servicebus" } },
+                      "host": { "connection": { "name": "@parameters('$connections')['servicebus']['connectionId']" } },
                       "method": "post",
                       "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
                       "body": {
@@ -210,16 +211,15 @@
                     }
                   },
                   "Send_ManagerApproved_Email": {
-                    "type": "ApiConnection",
+                    "type": "Http",
                     "runAfter": { "Publish_ManagerApproved_To_Topic": ["Succeeded"] },
                     "inputs": {
-                      "host": { "connection": { "referenceName": "office365" } },
-                      "method": "post",
-                      "path": "/v2/Mail",
+                      "method": "POST",
+                      "uri": "@parameters('sendEmailFunctionUrl')",
                       "body": {
-                        "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
-                        "Subject": "Your expense was approved",
-                        "Body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager approved your $@{body('Parse_Expense_JSON')?['amount']} expense."
+                        "to": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                        "subject": "Your expense was approved",
+                        "body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager approved your $@{body('Parse_Expense_JSON')?['amount']} expense."
                       }
                     }
                   }
@@ -239,7 +239,7 @@
                       "type": "ApiConnection",
                       "runAfter": { "Compose_Rejected_Outcome": ["Succeeded"] },
                       "inputs": {
-                        "host": { "connection": { "referenceName": "servicebus" } },
+                        "host": { "connection": { "name": "@parameters('$connections')['servicebus']['connectionId']" } },
                         "method": "post",
                         "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
                         "body": {
@@ -250,16 +250,15 @@
                       }
                     },
                     "Send_Rejected_Email": {
-                      "type": "ApiConnection",
+                      "type": "Http",
                       "runAfter": { "Publish_Rejected_To_Topic": ["Succeeded"] },
                       "inputs": {
-                        "host": { "connection": { "referenceName": "office365" } },
-                        "method": "post",
-                        "path": "/v2/Mail",
+                        "method": "POST",
+                        "uri": "@parameters('sendEmailFunctionUrl')",
                         "body": {
-                          "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
-                          "Subject": "Your expense was rejected",
-                          "Body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager rejected your $@{body('Parse_Expense_JSON')?['amount']} expense."
+                          "to": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                          "subject": "Your expense was rejected",
+                          "body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager rejected your $@{body('Parse_Expense_JSON')?['amount']} expense."
                         }
                       }
                     }
@@ -283,7 +282,7 @@
                 "type": "ApiConnection",
                 "runAfter": { "Compose_Escalated_Outcome": ["Succeeded"] },
                 "inputs": {
-                  "host": { "connection": { "referenceName": "servicebus" } },
+                  "host": { "connection": { "name": "@parameters('$connections')['servicebus']['connectionId']" } },
                   "method": "post",
                   "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
                   "body": {
@@ -294,16 +293,15 @@
                 }
               },
               "Send_Escalated_Email": {
-                "type": "ApiConnection",
+                "type": "Http",
                 "runAfter": { "Publish_Escalated_To_Topic": ["Succeeded"] },
                 "inputs": {
-                  "host": { "connection": { "referenceName": "office365" } },
-                  "method": "post",
-                  "path": "/v2/Mail",
+                  "method": "POST",
+                  "uri": "@parameters('sendEmailFunctionUrl')",
                   "body": {
-                    "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
-                    "Subject": "Your expense was auto-approved (escalated)",
-                    "Body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager did not respond in time, so your $@{body('Parse_Expense_JSON')?['amount']} expense was auto-approved and flagged for review."
+                    "to": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                    "subject": "Your expense was auto-approved (escalated)",
+                    "body": "Hi @{body('Parse_Expense_JSON')?['employeeName']}, your manager did not respond in time, so your $@{body('Parse_Expense_JSON')?['amount']} expense was auto-approved and flagged for review."
                   }
                 }
               }
@@ -325,7 +323,7 @@
             "type": "ApiConnection",
             "runAfter": { "Compose_ValidationError_Outcome": ["Succeeded"] },
             "inputs": {
-              "host": { "connection": { "referenceName": "servicebus" } },
+              "host": { "connection": { "name": "@parameters('$connections')['servicebus']['connectionId']" } },
               "method": "post",
               "path": "/@{encodeURIComponent(parameters('outcomeTopicName'))}/messages",
               "body": {
@@ -336,16 +334,15 @@
             }
           },
           "Send_ValidationError_Email": {
-            "type": "ApiConnection",
+            "type": "Http",
             "runAfter": { "Publish_ValidationError_To_Topic": ["Succeeded"] },
             "inputs": {
-              "host": { "connection": { "referenceName": "office365" } },
-              "method": "post",
-              "path": "/v2/Mail",
+              "method": "POST",
+              "uri": "@parameters('sendEmailFunctionUrl')",
               "body": {
-                "To": "@body('Parse_Expense_JSON')?['employeeEmail']",
-                "Subject": "Your expense submission had errors",
-                "Body": "Please correct the following and resubmit: @{join(body('Parse_Validation_Result')?['errors'], ', ')}"
+                "to": "@body('Parse_Expense_JSON')?['employeeEmail']",
+                "subject": "Your expense submission had errors",
+                "body": "Please correct the following and resubmit: @{join(body('Parse_Validation_Result')?['errors'], ', ')}"
               }
             }
           }

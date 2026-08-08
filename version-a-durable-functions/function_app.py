@@ -23,10 +23,12 @@ Flow:
 
 import json
 import logging
+import os
 from datetime import timedelta
 
 import azure.durable_functions as df
 import azure.functions as func
+from azure.communication.email import EmailClient
 
 app = df.DFApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -146,6 +148,11 @@ def expense_orchestrator(context: df.DurableOrchestrationContext):
         # Manager responded in time — cancel the still-pending timer.
         timeout_task.cancel()
         decision = decision_task.result
+        if isinstance(decision, str):
+            # The durable-functions Python client's raise_event JSON-encodes
+            # event_data before sending; the orchestrator can receive it back
+            # as a JSON string rather than an already-parsed dict.
+            decision = json.loads(decision)
         if decision.get("decision") == "approved":
             result = {
                 "status": "approved",
@@ -245,11 +252,25 @@ def send_notification(payload: dict) -> dict:
         f"Expense: ${expense.get('amount')} - {expense.get('category')} - {expense.get('description')}\n"
     )
 
-    # NOTE: In this assignment, sending real email is done via SendGrid /
-    # Communication Services output binding in production. For local
-    # dev/testing we log the notification instead of requiring live
-    # credentials. Swap this for an `@app.generic_output_binding` SendGrid
-    # binding when deploying to Azure.
-    logging.info(f"[EMAIL to {expense.get('employeeEmail')}] Subject: {subject}\n{body}")
+    recipient = expense.get("employeeEmail")
+    connection_string = os.environ.get("COMMUNICATION_SERVICES_CONNECTION_STRING")
+    sender = os.environ.get("SENDER_EMAIL")
 
-    return {"sent": True, "to": expense.get("employeeEmail"), "subject": subject}
+    if not recipient or not connection_string or not sender:
+        # No usable recipient (e.g. validation failed because employeeEmail
+        # itself was missing/invalid) or ACS not configured: log instead of
+        # sending, rather than failing the whole orchestration.
+        logging.info(f"[EMAIL to {recipient}] Subject: {subject}\n{body}")
+        return {"sent": False, "to": recipient, "subject": subject}
+
+    client = EmailClient.from_connection_string(connection_string)
+    message = {
+        "senderAddress": sender,
+        "recipients": {"to": [{"address": recipient}]},
+        "content": {"subject": subject, "plainText": body},
+    }
+    poller = client.begin_send(message)
+    send_result = poller.result()
+    logging.info(f"Email to {recipient} -> status {send_result['status']}")
+
+    return {"sent": send_result["status"] == "Succeeded", "to": recipient, "subject": subject}
