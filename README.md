@@ -1,7 +1,7 @@
 # Expense Approval Workflow: Durable Functions vs. Logic Apps + Service Bus
 
 **Name:** Muhannad Jaber
-**Student Number:** _[fill in — replace with your student number]_
+**Student Number:** riya0009
 **Course:** CST8917 — Serverless Applications, Spring/Summer 2026
 **Project:** Assignment 2 — Compare & Contrast: Dual Implementation of an Expense Approval Workflow
 **Date:** 2026-08-06
