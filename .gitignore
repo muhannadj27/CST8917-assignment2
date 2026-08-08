@@ -11,6 +11,10 @@ venv/
 # Logic Apps generated connections (contains secrets)
 version-b-logic-apps/logicapp/connections.json
 
+# Live-demo scratch files with a real function key baked in — for local
+# recording use only, never committed
+presentation/local-demo/
+
 # OS / editor
 .DS_Store
 .vscode/
