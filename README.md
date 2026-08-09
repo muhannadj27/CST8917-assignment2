@@ -1,24 +1,20 @@
 # Expense Approval Workflow: Durable Functions vs. Logic Apps + Service Bus
 
-**Name:** Muhannad Jaber
-**Student Number:** riya0009
-**Course:** CST8917 — Serverless Applications, Spring/Summer 2026
-**Project:** Assignment 2 — Compare & Contrast: Dual Implementation of an Expense Approval Workflow
-**Date:** 2026-08-06
-
----
-
-## Overview
-
-This repository implements the same business workflow — an expense approval
-pipeline — twice, using two different Azure serverless orchestration models:
+The same expense-approval workflow, built twice on Azure using two different
+serverless orchestration models, deployed to a real Azure subscription and
+exercised end-to-end so the comparison below is based on actual behavior,
+not just documentation.
 
 - **[Version A](version-a-durable-functions/)** — Azure Durable Functions (Python v2, code-first orchestration)
 - **[Version B](version-b-logic-apps/)** — Azure Logic Apps + Service Bus (visual/declarative orchestration)
 
-Both versions are deployed and have been exercised end-to-end against real Azure resources — all 12 required test scenarios (6 per version) passed against live endpoints. See **[`DEPLOYMENT_EVIDENCE.md`](DEPLOYMENT_EVIDENCE.md)** for the deployed resource names and real test results, **[`version-b-logic-apps/screenshots/`](version-b-logic-apps/screenshots/)** for Azure Portal evidence, and **[`presentation/video-link.md`](presentation/video-link.md)** for the recorded walkthrough.
+📄 [Deployment & test evidence](DEPLOYMENT_EVIDENCE.md) · 🖼️ [Portal screenshots](version-b-logic-apps/screenshots/) · 🎥 [Video walkthrough](presentation/video-link.md)
 
-**Business rules (identical in both versions):**
+---
+
+## How it works
+
+Both versions implement the same rules:
 
 | Rule | Description |
 |---|---|
@@ -29,11 +25,128 @@ Both versions are deployed and have been exercised end-to-end against real Azure
 | Timeout | No manager decision within the timeout window → auto-approved and flagged `escalated` |
 | Notification | Employee is emailed the final outcome |
 
+```mermaid
+flowchart TD
+    A[Expense submitted] --> B{Valid?}
+    B -- No --> E1[Email: validation error]
+    B -- Yes --> C{Amount < $100?}
+    C -- Yes --> D1[Auto-approve]
+    C -- No --> W[Wait for manager decision]
+    W -- Approved --> D2[Approved]
+    W -- Rejected --> D3[Rejected]
+    W -- Timeout --> D4[Auto-approve + flag escalated]
+    D1 --> E2[Email: outcome]
+    D2 --> E2
+    D3 --> E2
+    D4 --> E2
+```
+
+**Version A** runs this as one Python orchestrator function using Durable
+Functions' `wait_for_external_event` + `create_timer` race. **Version B**
+runs it as a Logic App triggered off a Service Bus queue message, using an
+`HttpWebhook` action for the same wait-or-timeout behavior, and publishing
+outcomes to a Service Bus topic with filtered subscriptions per outcome.
+
 ---
 
-## Version A Summary — Durable Functions
+## Repository structure
 
-**[`version-a-durable-functions/`](version-a-durable-functions/)**
+```
+version-a-durable-functions/
+  function_app.py           Orchestrator + activities + HTTP triggers
+  requirements.txt
+  local.settings.example.json
+  test-durable.http         REST Client requests for all 6 test scenarios
+
+version-b-logic-apps/
+  function_app.py           validate_expense / notify_manager_webhook / send-email endpoints
+  logicapp/
+    workflow.json            Logic App Workflow Definition Language
+    deploy.json               ARM template (workflow + Service Bus API connection)
+    connections.example.json
+  infra/
+    provision-service-bus.sh  Provisions namespace, queue, topic, subscriptions
+  screenshots/                Azure Portal evidence (run history, emails, etc.)
+  test-expense.http           REST Client requests for all 6 test scenarios
+
+presentation/
+  slides.pptx, slides-outline.md, video-script.md, video-link.md
+
+DEPLOYMENT_EVIDENCE.md      Real resource names + live test results from both versions
+```
+
+---
+
+## Prerequisites
+
+- An Azure subscription
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli), logged in (`az login`)
+- [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local) v4
+- Python 3.11
+- [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) (for local storage emulation) or an Azure Storage account
+- An [Azure Communication Services](https://learn.microsoft.com/azure/communication-services/quickstarts/email/create-email-communication-resource) resource with Email provisioned (both versions send real email through it)
+- The [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) VS Code extension (to run the `.http` test files), or any HTTP client
+
+---
+
+## Running Version A locally
+
+```bash
+cd version-a-durable-functions
+python -m venv .venv && .venv\Scripts\activate   # or source .venv/bin/activate
+pip install -r requirements.txt
+cp local.settings.example.json local.settings.json
+# fill in COMMUNICATION_SERVICES_CONNECTION_STRING and SENDER_EMAIL
+func start
+```
+
+Then open `test-durable.http` and send the requests for each scenario.
+`submit_expense` returns a `statusQueryGetUri` you can poll (or the REST
+Client will do it for you if the request is chained) to see the orchestration
+reach `Completed`.
+
+## Running Version B locally
+
+```bash
+cd version-b-logic-apps
+python -m venv .venv && .venv\Scripts\activate
+pip install -r requirements.txt
+cp local.settings.example.json local.settings.json
+# fill in ServiceBusConnection, COMMUNICATION_SERVICES_CONNECTION_STRING, SENDER_EMAIL
+func start
+```
+
+The Logic App itself (`logicapp/workflow.json`) is deployed to Azure to run —
+Logic Apps Consumption doesn't have a meaningful offline/local run mode for
+this kind of testing. Locally you can still exercise `function_app.py`'s
+`validate_expense` and `notify_manager_webhook` endpoints directly.
+
+## Deploying to Azure
+
+1. Provision the Service Bus namespace, queue, topic, and filtered subscriptions:
+   ```bash
+   RESOURCE_GROUP=<your-rg> LOCATION=<your-region> NAMESPACE=<globally-unique-name> \
+     ./version-b-logic-apps/infra/provision-service-bus.sh
+   ```
+2. Create the two Function Apps and a Communication Services + Email resource, deploy `function_app.py` to each (`func azure functionapp publish <name>`), and set their app settings to match `local.settings.example.json`.
+3. Deploy the Logic App with `version-b-logic-apps/logicapp/deploy.json` (ARM template), which provisions the Service Bus API connection and the workflow definition together — copy `connections.example.json` to `connections.json` first and fill in the connection's resource ID.
+
+See [`DEPLOYMENT_EVIDENCE.md`](DEPLOYMENT_EVIDENCE.md) for the actual resource names, regions, and live test results from this repository's own deployment.
+
+## Testing
+
+Each version has 6 scenarios covering: auto-approve, manager approves, manager
+rejects, manager times out (escalated), missing required fields, and invalid
+category. Run them via `test-durable.http` (Version A) or `test-expense.http`
+(Version B) with the REST Client extension — see
+[`DEPLOYMENT_EVIDENCE.md`](DEPLOYMENT_EVIDENCE.md) for the expected result of
+each scenario against a live deployment, and
+[`version-b-logic-apps/screenshots/`](version-b-logic-apps/screenshots/) for
+Azure Portal evidence of Version B's runs.
+
+---
+
+## Version A details — Durable Functions
 
 Implemented with the Python v2 programming model (`azure.durable_functions`).
 
@@ -50,11 +163,7 @@ Implemented with the Python v2 programming model (`azure.durable_functions`).
 - Orchestrator functions must be deterministic (no direct I/O, no `datetime.now()`, no random calls) — all side effects have to go through activities, which took some getting used to coming from normal Python.
 - Canceling the "losing" side of a `task_any` race (the timer, or the still-pending event wait) needed explicit handling to avoid orphaned tasks.
 
----
-
-## Version B Summary — Logic Apps + Service Bus
-
-**[`version-b-logic-apps/`](version-b-logic-apps/)**
+## Version B details — Logic Apps + Service Bus
 
 - **Service Bus queue** `expense-requests` receives incoming expense JSON.
 - **Logic App** (`logicapp/workflow.json`) triggers on new queue messages, calls an Azure Function for validation, branches on amount, and publishes outcomes to a **Service Bus topic** `expense-outcomes`.
@@ -77,7 +186,7 @@ Logic Apps has no built-in equivalent of Durable Functions' external-event-plus-
 
 ---
 
-## Comparison Analysis
+## Comparison analysis
 
 **Development experience.** Building Version A felt like writing a normal Python program: the orchestrator is a single generator function with `if`/`else` branches, and the human-interaction race (`context.task_any([decision_task, timeout_task])`) reads the same way a developer would describe it in English. Mistakes surfaced as Python exceptions with real stack traces. Version B required thinking in a different medium entirely — a nested JSON tree of `actions`, `runAfter` dependency edges, and `@body('ActionName')` string-expression references. Hand-authoring `workflow.json` (rather than using the visual designer) made the dependency graph explicit, which was useful for this write-up, but it is not how Logic Apps is meant to be developed day-to-day — the designer trades that transparency for drag-and-drop speed. For a developer already comfortable with Python, Version A was faster to reason about and less error-prone to modify; a `runAfter` typo in the JSON fails silently in a way a Python `NameError` never would.
 
@@ -90,8 +199,6 @@ Logic Apps has no built-in equivalent of Durable Functions' external-event-plus-
 **Observability.** Logic Apps' per-run visual trace — every action as a node, each with its exact input/output JSON, timestamps, and status — is easier to read at a glance than the Durable Functions equivalent, especially for someone who didn't write the workflow. Durable Functions' status comes from `client.get_status()` (custom status / history), Application Insights dependency tracking, and the Durable Functions extension's own diagnostic events, which give the same information but require more assembly — there is no single built-in "here is a diagram of this specific run" view without additional tooling (e.g., the Durable Functions Monitor extension). For quickly explaining to a non-developer stakeholder "here's exactly what happened to expense #4291," Logic Apps wins.
 
 **Cost.** At **~100 expenses/day** (~3,000/month), both stay comfortably inside free-tier allowances: Azure Functions' Consumption plan includes 1M free executions and 400,000 GB-s/month, so Version A's ~4 activities × 3,000 runs/month is negligible; Logic Apps Consumption pricing (~$0.000125/action, first 4,000 actions/month free) means Version B's ~7-9 actions × 3,000 runs/month costs a few dollars, plus a Service Bus Standard namespace at a flat ~$10/month (required for topics — Basic tier is queue-only) and a Function App on Consumption for the validation/webhook endpoints (again free-tier). Total: Version A effectively **$0/month**; Version B **~$10-15/month**, dominated by the Service Bus Standard namespace floor, not by usage. At **~10,000 expenses/day** (~300,000/month), Version A stays on Consumption pricing and remains under $5-10/month (still within or barely past free execution/GB-s allowances). Version B's per-action Logic Apps billing starts to matter: ~7-9 actions × 300,000 ≈ 2.1-2.7M actions/month at $0.000125/action ≈ **$260-340/month**, on top of the same ~$10 Service Bus namespace — Logic Apps Consumption's flat per-action price does not benefit from the same free-execution-bundle economics that Azure Functions Consumption gets, so it scales roughly linearly where Durable Functions' cost grows much more slowly. (Estimated using the [Azure Pricing Calculator](https://azure.microsoft.com/pricing/calculator/); assumes Consumption/Standard tiers, Canada Central region, and does not include Application Insights ingestion or Office 365 connector costs, which are typically bundled with an existing M365 license.)
-
----
 
 ## Recommendation
 
@@ -117,7 +224,7 @@ The caveat: **Logic Apps + Service Bus is the better choice when the team's prim
 
 ---
 
-## AI Disclosure
+## AI disclosure
 
 AI assistance (Claude, Anthropic) was used substantially in this assignment:
 
@@ -125,3 +232,14 @@ AI assistance (Claude, Anthropic) was used substantially in this assignment:
 - **Deployment and testing:** Both versions were deployed with AI assistance to a real Azure subscription (Azure CLI, already authenticated as the student) — resource group, storage accounts, both Function Apps, the Service Bus namespace/queue/topic/subscriptions, Azure Communication Services Email, and the Logic App workflow (via an ARM template deploying the Service Bus API connection + workflow definition together). All 12 test scenarios were run against these live endpoints; two real bugs were found and fixed as a direct result (see `DEPLOYMENT_EVIDENCE.md`).
 - **Comparison analysis:** The six-dimension comparison and recommendation were drafted with AI assistance, grounded in the process of designing, deploying, and testing both versions in this repository (e.g., the actual line-count/verbosity difference in the manager-decision branch, the two bugs only surfaced by live testing, the `TimedOut`→`Failed` run-status finding in Version B) and in publicly documented pricing/behavior for each service.
 - **What was NOT done by AI:** Capture of the Azure Portal browser screenshots in `version-b-logic-apps/screenshots/` and recording of the video presentation were done by the student — this AI assistant has no browser/screen-capture tooling.
+
+---
+
+## About this submission
+
+| | |
+|---|---|
+| Name | Muhannad Jaber |
+| Student number | riya0009 |
+| Course | CST8917 — Serverless Applications, Spring/Summer 2026 |
+| Assignment | Assignment 2 — Compare & Contrast: Dual Implementation of an Expense Approval Workflow |
