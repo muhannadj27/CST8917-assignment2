@@ -4,17 +4,55 @@ Captured after deploying Version B to Azure and running the test scenarios in
 [`../test-expense.http`](../test-expense.http) against the live
 `expense-approval-logic-62838` Logic App.
 
-- [x] Logic App **run history** list showing multiple runs (mixed outcomes) — [`01-run-history.png`](01-run-history.png)
-- [x] A **succeeded run** detail view for the auto-approve path (Scenario 1) — [`02-auto-approve-run.png`](02-auto-approve-run.png)
-- [x] A **succeeded run** detail view for the manager-approval path (Scenario 2) — [`03-manager-approve-run.png`](03-manager-approve-run.png)
-      (see also [`03b-manager-reject-run.png`](03b-manager-reject-run.png) for the manager-rejects path, Scenario 3)
-- [x] A **timed-out** `Wait_For_Manager_Decision` action (Scenario 4 escalation) — [`04-timeout-escalation-run.png`](04-timeout-escalation-run.png)
-      (run shows top-level Failed status because the wait action itself timed out, even though the workflow caught it and sent the auto-approved-after-timeout email)
-- [x] The **validation-error branch** (Condition_Is_Valid = false) (Scenarios 5 & 6) — [`05-validation-error-run.png`](05-validation-error-run.png), [`05b-validation-error-run-2.png`](05b-validation-error-run-2.png)
-- [x] **Emails received** for approved / rejected / escalated / validation-error outcomes — [`06-emails.png`](06-emails.png)
-- [x] Service Bus **topic subscription message counts** in the Azure Portal (`expense-outcomes` topic → subscriptions), showing messages landed in `approved-sub`, `rejected-sub`, `escalated-sub`, `validation-error-sub` — [`07-subscription-counts.png`](07-subscription-counts.png)
+### 1. Run history — multiple runs, mixed outcomes
 
-Bonus: [`08-all-resources.png`](08-all-resources.png) — Resource Manager "All resources" view showing the full set of deployed Version A + Version B Azure resources.
+![Run history list](01-run-history.png)
+
+### 2. Succeeded run — auto-approve path (Scenario 1)
+
+![Auto-approve run](02-auto-approve-run.png)
+
+### 3. Succeeded run — manager-approval path (Scenario 2)
+
+![Manager-approve run](03-manager-approve-run.png)
+
+### 3b. Succeeded run — manager-rejects path (Scenario 3)
+
+![Manager-reject run](03b-manager-reject-run.png)
+
+### 4. Timed-out `Wait_For_Manager_Decision` — escalation (Scenario 4)
+
+Run shows top-level `Failed` status because the wait action itself timed out,
+even though the workflow caught it and sent the auto-approved-after-timeout
+email.
+
+![Timeout escalation run](04-timeout-escalation-run.png)
+
+### 5. Validation-error branch (Scenarios 5 & 6)
+
+![Validation error run](05-validation-error-run.png)
+
+![Validation error run 2](05b-validation-error-run-2.png)
+
+### 6. Emails received — approved / rejected / escalated / validation-error
+
+![Emails received](06-emails.png)
+
+### 7. Service Bus topic subscription message counts
+
+`expense-outcomes` topic → subscriptions, showing messages landed in
+`approved-sub`, `rejected-sub`, `escalated-sub`, `validation-error-sub`.
+
+![Subscription counts](07-subscription-counts.png)
+
+### Bonus: All deployed resources
+
+Resource Manager "All resources" view showing the full set of deployed
+Version A + Version B Azure resources.
+
+![All resources](08-all-resources.png)
+
+---
 
 ## Notes on the Condition action durations
 
