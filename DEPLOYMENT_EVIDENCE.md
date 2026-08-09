@@ -3,10 +3,11 @@
 Both versions are deployed to a real Azure subscription ("Azure for Students",
 Algonquin tenant) and all 12 required test scenarios (6 per version) were run
 against the live endpoints. This file is the CLI/API-based evidence collected
-during that run — it does not replace the Azure Portal screenshots and video
-still required by the assignment (see `version-b-logic-apps/screenshots/README.md`
-and `presentation/video-link.md`), but everything below is real output from
-the actual deployed resources, not a simulation.
+during that run — it supplements, not replaces, the Azure Portal screenshots
+and video also included with the assignment (see
+`version-b-logic-apps/screenshots/README.md` and `presentation/video-link.md`),
+but everything below is real output from the actual deployed resources, not a
+simulation.
 
 ## Deployed resources
 

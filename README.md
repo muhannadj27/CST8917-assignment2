@@ -16,7 +16,7 @@ pipeline — twice, using two different Azure serverless orchestration models:
 - **[Version A](version-a-durable-functions/)** — Azure Durable Functions (Python v2, code-first orchestration)
 - **[Version B](version-b-logic-apps/)** — Azure Logic Apps + Service Bus (visual/declarative orchestration)
 
-Both versions are deployed and have been exercised end-to-end against real Azure resources — all 12 required test scenarios (6 per version) passed against live endpoints. See **[`DEPLOYMENT_EVIDENCE.md`](DEPLOYMENT_EVIDENCE.md)** for the deployed resource names and real test results (this supplements, not replaces, the Azure Portal screenshots and video still needed for submission).
+Both versions are deployed and have been exercised end-to-end against real Azure resources — all 12 required test scenarios (6 per version) passed against live endpoints. See **[`DEPLOYMENT_EVIDENCE.md`](DEPLOYMENT_EVIDENCE.md)** for the deployed resource names and real test results, **[`version-b-logic-apps/screenshots/`](version-b-logic-apps/screenshots/)** for Azure Portal evidence, and **[`presentation/video-link.md`](presentation/video-link.md)** for the recorded walkthrough.
 
 **Business rules (identical in both versions):**
 
@@ -124,14 +124,11 @@ AI assistance (Claude, Anthropic) was used substantially in this assignment:
 - **Code generation:** The Durable Functions orchestrator/activities/client code (Version A) and the Logic Apps workflow definition, Azure Function endpoints, and Service Bus provisioning script (Version B) were drafted with AI assistance based on the assignment's stated business rules and official Microsoft documentation for both services.
 - **Deployment and testing:** Both versions were deployed with AI assistance to a real Azure subscription (Azure CLI, already authenticated as the student) — resource group, storage accounts, both Function Apps, the Service Bus namespace/queue/topic/subscriptions, Azure Communication Services Email, and the Logic App workflow (via an ARM template deploying the Service Bus API connection + workflow definition together). All 12 test scenarios were run against these live endpoints; two real bugs were found and fixed as a direct result (see `DEPLOYMENT_EVIDENCE.md`).
 - **Comparison analysis:** The six-dimension comparison and recommendation were drafted with AI assistance, grounded in the process of designing, deploying, and testing both versions in this repository (e.g., the actual line-count/verbosity difference in the manager-decision branch, the two bugs only surfaced by live testing, the `TimedOut`→`Failed` run-status finding in Version B) and in publicly documented pricing/behavior for each service.
-- **What was NOT done by AI:** Capture of the Azure Portal browser screenshots referenced in `version-b-logic-apps/screenshots/` and recording of the video presentation were **not performed** — this AI assistant has no browser/screen-capture tooling. **These two items still need to be completed by the student** before submission — see "Outstanding Work" below.
+- **What was NOT done by AI:** Capture of the Azure Portal browser screenshots in `version-b-logic-apps/screenshots/` and recording of the video presentation were done by the student — this AI assistant has no browser/screen-capture tooling.
 
 ## Outstanding Work Before Submission
 
-Both versions are deployed and fully tested (see `DEPLOYMENT_EVIDENCE.md`). What's left is visual/human-facing material that couldn't be produced by an AI assistant:
+Both versions are deployed and fully tested (see `DEPLOYMENT_EVIDENCE.md`), screenshots are captured (see `version-b-logic-apps/screenshots/`), and the video is recorded (see `presentation/video-link.md`). What's left:
 
-1. Fill in your real student number above.
-2. Take the Azure Portal screenshots listed in `version-b-logic-apps/screenshots/README.md` (run history, the timeout/escalation run, emails received, subscription counts) — the underlying runs already exist and can be viewed in the portal for `expense-approval-logic-62838` in resource group `rg-cst8917-expense`.
-3. Build `presentation/slides.pptx` from `presentation/slides-outline.md` further if needed (a starter deck with all 6 required sections already exists), record the 10-15 minute video per the assignment spec, and fill in `presentation/video-link.md`.
-4. Review the comparison analysis above and adjust it based on your own hands-on impressions — it's grounded in real deployment/testing (including two bugs found live), not just documentation reading, but it's still worth putting in your own words for the presentation.
-5. Once you're done presenting (Aug 11), consider tearing down the Azure resources (`az group delete --name rg-cst8917-expense`) if you don't need them running afterward, to stop consuming Azure-for-Students credits.
+1. Review the comparison analysis above and adjust it based on your own hands-on impressions — it's grounded in real deployment/testing (including two bugs found live), not just documentation reading, but it's still worth putting in your own words for the presentation.
+2. Once you're done presenting (Aug 11), consider tearing down the Azure resources (`az group delete --name rg-cst8917-expense`) if you don't need them running afterward, to stop consuming Azure-for-Students credits.

@@ -1,17 +1,31 @@
 # Screenshots
 
-This folder is a placeholder. After deploying Version B to Azure and running
-the six scenarios in [`../test-expense.http`](../test-expense.http), add
-screenshots here covering:
+Captured after deploying Version B to Azure and running the test scenarios in
+[`../test-expense.http`](../test-expense.http) against the live
+`expense-approval-logic-62838` Logic App.
 
-- [ ] Logic App **run history** list showing multiple runs (mixed outcomes)
-- [ ] A **succeeded run** detail view, expanded, for the auto-approve path (Scenario 1)
-- [ ] A **succeeded run** detail view for the manager-approval path (Scenario 2), showing the `Wait_For_Manager_Decision` action and `Condition_Manager_Responded` branch
-- [ ] A **timed-out** `Wait_For_Manager_Decision` action (Scenario 4 escalation)
-- [ ] The **validation-error branch** (Condition_Is_Valid = false) expanded (Scenario 5 or 6)
-- [ ] **Emails received** for approved / rejected / escalated / validation-error outcomes
-- [ ] Service Bus **topic subscription message counts** in the Azure Portal (Service Bus namespace → `expense-outcomes` topic → subscriptions), showing messages landed in `approved-sub`, `rejected-sub`, `escalated-sub`, `validation-error-sub`
+- [x] Logic App **run history** list showing multiple runs (mixed outcomes) — [`01-run-history.png`](01-run-history.png)
+- [x] A **succeeded run** detail view for the auto-approve path (Scenario 1) — [`02-auto-approve-run.png`](02-auto-approve-run.png)
+- [x] A **succeeded run** detail view for the manager-approval path (Scenario 2) — [`03-manager-approve-run.png`](03-manager-approve-run.png)
+      (see also [`03b-manager-reject-run.png`](03b-manager-reject-run.png) for the manager-rejects path, Scenario 3)
+- [x] A **timed-out** `Wait_For_Manager_Decision` action (Scenario 4 escalation) — [`04-timeout-escalation-run.png`](04-timeout-escalation-run.png)
+      (run shows top-level Failed status because the wait action itself timed out, even though the workflow caught it and sent the auto-approved-after-timeout email)
+- [x] The **validation-error branch** (Condition_Is_Valid = false) (Scenarios 5 & 6) — [`05-validation-error-run.png`](05-validation-error-run.png), [`05b-validation-error-run-2.png`](05b-validation-error-run-2.png)
+- [x] **Emails received** for approved / rejected / escalated / validation-error outcomes — [`06-emails.png`](06-emails.png)
+- [x] Service Bus **topic subscription message counts** in the Azure Portal (`expense-outcomes` topic → subscriptions), showing messages landed in `approved-sub`, `rejected-sub`, `escalated-sub`, `validation-error-sub` — [`07-subscription-counts.png`](07-subscription-counts.png)
 
-Suggested naming: `01-run-history.png`, `02-auto-approve-run.png`,
-`03-manager-approve-run.png`, `04-timeout-escalation-run.png`,
-`05-validation-error-run.png`, `06-emails.png`, `07-subscription-counts.png`.
+Bonus: [`08-all-resources.png`](08-all-resources.png) — Resource Manager "All resources" view showing the full set of deployed Version A + Version B Azure resources.
+
+## Notes on the Condition action durations
+
+The Logic App run canvas collapses `Wait_For_Manager_Decision` inside the
+`Condition Is Valid` action's branch, so the screenshots show that action's
+elapsed time rather than an expanded inner view:
+
+- Auto-approve (Scenario 1): condition resolves in under a second — no wait.
+- Manager approves / rejects (Scenarios 2 & 3): condition takes ~1-2 minutes,
+  reflecting the real wait for the manager decision webhook callback.
+- Timeout escalation (Scenario 4): condition takes just over 5 minutes,
+  matching the configured wait timeout before auto-approve-and-escalate fires.
+- Validation errors (Scenarios 5 & 6): resolve near-instantly, since no
+  manager wait is reached.
